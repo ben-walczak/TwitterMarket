@@ -1,0 +1,49 @@
+library("topicmodels", lib.loc="~/R/win-library/3.3")
+library("RColorBrewer", lib.loc="~/R/win-library/3.3")
+library("twitteR", lib.loc="~/R/win-library/3.3")
+library("ROAuth", lib.loc="~/R/win-library/3.3")
+library("wordcloud", lib.loc="~/R/win-library/3.3")
+library("tm", lib.loc="~/R/win-library/3.3")
+library("ggplot2", lib.loc="~/R/win-library/3.3")
+
+consumer_key <- "bE0qXOf5juUFOwpbU2AEcwYzD"
+consumer_secret <- "hoezCaB5DGKAeTbNFy2NbP8Hut7OkPDGOUkhJPz99yn0fAi2AC"
+access_token <- "831292517115129858-1XnzN763SS52eGSJMEYtdEIPe6iunbn"
+access_secret <- "7vpf2VUVgGbK9PktxFIjefuYkCMtfw2YczjowxW2zlFv7"
+setup_twitter_oauth(consumer_key, consumer_secret, access_token, access_secret)
+
+tweets <- searchTwitter("nasdaq", n = 10000, lang = "en", since = "2017-03-07", until = "2017-03-08")
+tweets.df <-twListToDF(tweets)
+colnames(tweets.df)
+tweets.df<-tweets.df[,c("text","favorited","favoriteCount","created","retweetCount","retweeted")]
+colnames(tweets.df)
+
+allText <- Corpus(VectorSource(tweets.df$text))
+removeURL <- function(x) gsub("http[^[:space:]]*", "", x)
+allText <- tm_map(allText, content_transformer(removeURL))
+removeNumPunct <- function(x) gsub("[^[:alpha:][:space:]]*","",x)
+allText <- tm_map(allText, content_transformer(removeNumPunct))
+allText <- tm_map(allText, content_transformer(tolower))
+myStopwords <- c(stopwords('english'),"available", "via","rt","like","nasdaq")
+allText <- tm_map(allText, removeWords, myStopwords)
+
+tdm <- TermDocumentMatrix(allText, control = list(wordLengths = c(1, Inf)))
+tdm <- removeSparseTerms(tdm, sparse = 0.993)
+m <- as.matrix(tdm)
+word.freq <- sort(rowSums(m), decreasing = T)
+pal <- brewer.pal(9, "BuGn")
+pal <- pal[-(1:4)]
+wordcloud(words = names(word.freq), freq = word.freq, min.freq = 3, random.order = F, colors = pal)
+
+
+tdm <- TermDocumentMatrix(allText, control = list(wordLengths = c(1, Inf)))
+tdm <- removeSparseTerms(tdm, sparse = 0.98)
+term.freq <- rowSums(as.matrix(tdm))
+term.freq <- subset(term.freq, term.freq >= 15)
+df <- data.frame(term = names(term.freq), freq = term.freq)
+ggplot(df, aes(x = term, y = freq)) + geom_bar(stat = "identity") + xlab("Terms") + ylab("Count") + coord_flip()
+
+nasdaq <- na.omit(getSymbols("nasdaq", src = "FRED", from = "2017-03-08", auto.assign = FALSE))
+nasdaq.hourly <- nasdaq[endpoints(nasdaq, on ="hours")]
+nasdaq.df <- data.frame(index(nasdaq.hourly), coredata(nasdaq.hourly), stringsAsFactors=FALSE)
+ggplot(nasdaq.df, aes(date)) + geom_line(aes(y = nasdaq)) + labs( title = "Nasdaq (ggplot2::ggplot)")
