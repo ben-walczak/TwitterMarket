@@ -1,0 +1,129 @@
+# all imports, library setups here
+
+import plotly.plotly as py
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+import tweepy
+from textblob import TextBlob
+import datetime
+
+token_key = '839310674635419649-yC6jfbvEFXM4PtdTPBI0vFBRPQ4lHtQ'
+token_secret = 'pPHifijyZrFTpG4VeP4k8Kh87kEw8vYDq2WKvvVVMfdbm'
+con_secret = 'z4F2ibb2GLBMgRGUcDRxIWv8YlQrQsKtvYpY8Frb79hvLnYHMb'
+con_key = 'Ax13skvsMd15qStr9XMgULYJ1'
+
+auth = tweepy.OAuthHandler(con_key, con_secret)
+auth.set_access_token(token_key, token_secret)
+
+api = tweepy.API(auth)
+
+# gather tweets related to nasdaq
+query = 'nasdaq'
+max_tweets = 10000
+day = datetime.datetime.now().day
+month = datetime.datetime.now().month
+results = []
+last_id = -1
+while len(results) < max_tweets:
+    count = max_tweets - len(results)
+    try:
+        new_tweets = api.search(q=query, count=count, max_id=str(last_id - 1),lang='en')
+        if not new_tweets:
+            break
+        results.extend(new_tweets)
+        last_id = new_tweets[-1].id
+    except tweepy.TweepError as e:
+        break
+
+tweets = list()
+print("available tweets: %d" % len(results))
+
+# Organize tweets for cleaning and sentiment analysis
+for result in results:
+    if result.created_at.day != day or result.created_at.month != month:
+        break
+
+    ''' CLEANING TEXT '''
+    text = result.text
+    while text.__contains__('https:'):
+        i = text.index('https:')
+        while i < len(text) and text[i] != ' ':
+            text = text[:i] + text[(i + 1):]
+    while text.__contains__('RT @'):
+        i = text.index('RT @')
+        while i < len(text) and text[i] != ' ':
+            text = text[:i] + text[(i + 1):]
+    while text.__contains__('@'):
+        i = text.index('@')
+        while i < len(text) and text[i] != ' ':
+            text = text[:i] + text[(i + 1):]
+    while text.__contains__('  '):
+        i = text.index('  ')
+        text = text[:i] + text[(i + 1):]
+    while text.__contains__(':'):
+        i = text.index(':')
+        text = text[:i] + text[(i + 1):]
+    while text.__contains__('\n'):
+        i = text.index('\n')
+        text = text.replace('\n',' ')
+    text = text.strip()
+
+    ''' SENTIMENT ANALYSIS '''
+    analysis = TextBlob(text)
+    polarity = 0
+    if analysis.sentiment.polarity > 0:
+        polarity = 1
+    elif analysis.sentiment.polarity < 0:
+        polarity = -1
+    #print(polarity)
+    
+    tweets.append({'text':text,'time':result.created_at,'rt_num':result.retweet_count,'polarity':polarity})
+    #print(text)
+time_polarity = [0]*1440
+pos_num = 0
+neg_num = 0
+zero_num = 0
+for tweet in tweets:
+    pos = tweet['time'].hour*60+tweet['time'].minute
+    if tweet['polarity'] < 0:
+        neg_num += 1
+        # increased magnitude of polarity if negative
+        # because negative words are less frequent
+        tweet['polarity'] *= 2
+    elif tweet['polarity'] > 0:
+        pos_num += 1
+    else:
+        zero_num += 1
+        
+    for i in range(pos,len(time_polarity)):
+        time_polarity[i] += tweet['polarity']
+    
+    #time_polarity[tweet['time'].hour*60+tweet['time'].minute]
+    #print("(created_at: %s, Polarity: %d, RT's: %d) tweet: %s " % (tweet['time'],tweet['polarity'],tweet['rt_num'],tweet['text']))
+print(time_polarity)
+
+# Display distribution of the polarity of tweets
+print(len(time_polarity))
+
+performance = [pos_num,zero_num,neg_num]
+objects = ('Positive Tweets','Nuetral Tweets','Negative Tweets')
+y_pos = np.arange(len(objects))
+
+plt.bar(y_pos, performance, align='center', alpha=0.5)
+plt.xticks(y_pos, objects)
+plt.ylabel('Frequency')
+plt.title('Distribution of polarity of tweets')
+ 
+plt.show()
+
+# Display the cummalitive mood of tweets throughout given day
+x = np.array([datetime.datetime(2017, month, day, int(i/60), i%60) for i in range(1440)])
+y = time_polarity
+plt.ylabel('Sum of polarity')
+plt.xlabel('Time (hourly)')
+plt.title('Cummulative Mood of tweets throughout day')
+ 
+plt.plot(x,y)
+plt.show()
